@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
-#include <iostream>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -137,12 +136,40 @@ auto Tensor<T>::element_wise_(const std::function<T(T)> &trans) -> void {
 
 
 template<class T>
-auto Tensor<T>::slice(Tensor<T>::SliceIdx &index) -> Tensor<T> {
-    // TODO
-    std::vector<size_t> shape(index.size());
-    std::transform(index.begin(), index.end(), shape.begin(), [] (const std::pair<size_t, size_t> &p) -> size_t {
-        return p.second - p.first;
+auto Tensor<T>::slice(Tensor<T>::SliceIdx &indexs) -> Tensor<T> {
+    assert(indexs.size() <= this->m_shape.size());
+    std::vector<size_t> shape;
+    for (const auto &[start, end] : indexs) {
+        assert(start <= end);
+        shape.push_back(end - start);
+    }
+
+    for (size_t i = indexs.size(); i < this->m_shape.size(); ++i) {
+        shape.push_back(this->m_shape[i]);
+    }
+    assert(shape.size() == this->m_shape.size());
+    Tensor<T> tensor(shape);
+    tensor.m_storage = this->m_storage;
+
+    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
+        return a * b;
     });
+
+    size_t index = 0;
+    size_t m_shape_index = 0;
+
+    for (const auto &[start, end] : indexs) {
+        stride /= this->m_shape[m_shape_index];
+        index += start * stride;
+        ++m_shape_index;
+    }
+
+    tensor.m_index_cb = [base=index, &shape=tensor.m_shape] (size_t index) -> size_t {
+
+        return base + index;
+    };
+
+    return tensor;
 }
 
 template<class T>
@@ -241,6 +268,7 @@ auto Tensor<T>::operator*=(const T scale) -> Tensor<T>& {
     };
     
     this->m_storage->element_wise(trans);
+    return *this;
 }
 
 
@@ -250,6 +278,7 @@ auto Tensor<T>::operator/=(const T scale) -> Tensor<T>& {
         return value / scale;
     };
     this->m_storage->element_wise(trans);
+    return *this;
 }
 
 
