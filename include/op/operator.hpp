@@ -11,6 +11,7 @@ class Operator {
 public:
     virtual ~Operator() = default;
     virtual auto operator()(const Tensor<T>&) -> Tensor<T> = 0;
+    virtual auto backward(const Tensor<T> &gradient_output) -> Tensor<T> = 0;
 };
 
 }

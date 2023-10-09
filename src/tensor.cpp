@@ -186,6 +186,40 @@ auto Tensor<T>::backward() -> void {
 //     return *this;
 // }
 
+
+template<class T>
+auto Tensor<T>::dot(const Tensor<T> &tensor) const -> Tensor<T> {
+    assert(this->size() == tensor.size());
+    assert(this->m_shape.size() == tensor.shapes().size());
+    for (size_t i = 0; i < this->m_shape.size(); ++i) {
+        assert(this->m_shape[i] == tensor.m_shape[i]);
+    }
+
+    T *data = new T[tensor.size()];
+    for (size_t i = 0; i < tensor.size(); ++i) {
+        data[i] = tensor[i] * (*this)[i];
+    }
+
+    Tensor<T> result(data, this->m_shape);
+    return result;
+}
+
+template<class T>
+auto Tensor<T>::dot_(const Tensor<T> &tensor) -> Tensor<T>& {
+    assert(this->size() == tensor.size());
+    assert(this->m_shape.size() == tensor.shapes().size());
+    for (size_t i = 0; i < this->m_shape.size(); ++i) {
+        assert(this->m_shape[i] == tensor.m_shape[i]);
+    }
+
+    for (size_t i = 0; i < tensor.size(); ++i) {
+        (*this)[i] *= tensor[i];
+    }
+
+    return *this;
+}
+
+
 template<class T>
 auto Tensor<T>::operator+(const Tensor<T> &tensor) const -> Tensor<T> {
     assert(tensor.size() == this->size());

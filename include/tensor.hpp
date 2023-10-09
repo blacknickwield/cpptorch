@@ -53,6 +53,9 @@ public:
     auto slice(SliceIdx &) -> Tensor<T>;
     auto backward() -> void;
 public:
+    auto dot(const Tensor<T> &tensor) const -> Tensor<T>;
+    auto dot_(const Tensor<T> &tensor) -> Tensor<T>&;
+public:
     // auto operator=(const Tensor<T> &tensor) -> Tensor<T>&;
     auto operator+(const Tensor<T> &tensor) const -> Tensor<T>;
     auto operator+=(const Tensor<T> &tensor) -> Tensor<T>&;
