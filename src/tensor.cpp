@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -21,18 +22,37 @@ Tensor<T>::Tensor() {
 }
 
 template<class T>
-Tensor<T>::Tensor(const std::vector<size_t> &shape, bool requires_grad) :
-    m_shape(shape), m_requires_grad(requires_grad), m_gradient(nullptr) {
-    auto size = std::reduce(m_shape.begin(), m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
-        return a * b;
+Tensor<T>::Tensor(const std::vector<size_t> &dims, bool requires_grad) 
+    : m_dims(dims), m_shape(dims.size()), m_requires_grad(requires_grad), m_gradient(nullptr) {
+    std::transform(dims.begin(), dims.end(), this->m_shape.begin(), [] (const size_t &index) -> Shape {
+        return {0, index};
+    });
+
+    auto size = std::reduce(m_shape.begin(), m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
     });
 
     this->m_storage = std::make_shared<Storage<T>>(size);
 }
 
 template<class T>
-Tensor<T>::Tensor(T *data, const std::vector<size_t> &shape, bool requires_grad) : m_shape(shape), m_requires_grad(requires_grad), m_gradient(nullptr) {
-    auto size = std::reduce(shape.begin(), shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
+Tensor<T>::Tensor(const std::vector<Shape> &shape, bool requires_grad) 
+    : m_shape(shape), m_requires_grad(requires_grad), m_gradient(nullptr) {
+    size_t size = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
+    });
+
+    this->m_storage = std::make_shared<Storage<T>>(size);
+}
+
+template<class T>
+Tensor<T>::Tensor(T *data, const std::vector<size_t> &dims, bool requires_grad) 
+    : m_dims(dims), m_shape(dims.size()), m_requires_grad(requires_grad), m_gradient(nullptr) {
+    std::transform(dims.begin(), dims.end(), this->m_shape.begin(), [] (const size_t &index) -> Shape {
+        return {0, index};
+    });
+    
+    size_t size = std::reduce(dims.begin(), dims.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
         return a * b;
     });
     
@@ -40,9 +60,22 @@ Tensor<T>::Tensor(T *data, const std::vector<size_t> &shape, bool requires_grad)
 }
 
 template<class T>
-Tensor<T>::Tensor(const std::vector<size_t> &shape, std::shared_ptr<Storage<T>> storage) :
-    m_shape(shape), m_storage(storage) {
+Tensor<T>::Tensor(T *data, const std::vector<Shape> &shape, bool requires_grad) :
+    m_shape(shape), m_requires_grad(requires_grad), m_gradient(nullptr) {
 
+    size_t size = 1;
+    for (const auto &[start, end] : this->m_shape) {
+        size *= (end - start);
+    }
+    // TODO
+}
+
+template<class T>
+Tensor<T>::Tensor(const std::vector<Shape> &shape, std::shared_ptr<Storage<T>> storage) :
+    m_shape(shape.size()), m_storage(storage) {
+    std::transform(shape.begin(), shape.end(), this->m_shape.begin(), [] (const Shape &shape) -> Shape {
+        return {START(shape), END(shape)};
+    });
 }
 
 template<class T>
@@ -90,19 +123,32 @@ auto Tensor<T>::operator=(Tensor<T> &&tensor) -> Tensor<T>& {
 
 template<class T>
 auto Tensor<T>::size() const -> size_t {
-    return std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
-        return a * b;
+    return std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
     });
 }
 
+// template<class T>
+// auto Tensor<T>::shapes() const -> const std::vector<size_t>& {
+//     return this->m_shape;
+// }
 template<class T>
-auto Tensor<T>::shapes() const -> const std::vector<size_t>& {
-    return this->m_shape;
+auto Tensor<T>::shapes() const -> std::vector<size_t> {
+    std::vector<size_t> shape(this->m_shape.size());
+    std::transform(this->m_shape.begin(), this->m_shape.end(), shape.begin(), [] (const Shape &rg) {
+        return END(rg) - START(rg);
+    });
+    return shape;
+}
+
+template<class T>
+auto Tensor<T>::dims() const -> const std::vector<size_t>& {
+    return this->m_dims;
 }
 
 template<class T>
 auto Tensor<T>::fill(T value) const -> Tensor<T> {
-    this->m_storage->fill(value);
+    // this->m_storage->fill(value);
     Tensor<T> tensor(this->m_shape);
     tensor.fill_(value);
     return tensor;
@@ -136,22 +182,21 @@ auto Tensor<T>::element_wise_(const std::function<T(T)> &trans) -> void {
 
 
 template<class T>
-auto Tensor<T>::slice(Tensor<T>::SliceIdx &indexs) -> Tensor<T> {
+auto Tensor<T>::slice(const std::vector<Shape> &indexs) -> Tensor<T> {
     assert(indexs.size() <= this->m_shape.size());
-    std::vector<size_t> shape;
+    std::vector<Shape> shape;
     for (const auto &[start, end] : indexs) {
         assert(start <= end);
-        shape.push_back(end - start);
+        shape.push_back({start, end});
     }
 
-    for (size_t i = indexs.size(); i < this->m_shape.size(); ++i) {
-        shape.push_back(this->m_shape[i]);
-    }
-    assert(shape.size() == this->m_shape.size());
+    
+    assert(shape.size() <= this->m_shape.size());
     Tensor<T> tensor(shape);
+    tensor.m_dims = this->m_dims;
     tensor.m_storage = this->m_storage;
 
-    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
+    size_t stride = std::reduce(this->m_dims.begin(), this->m_dims.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
         return a * b;
     });
 
@@ -159,15 +204,15 @@ auto Tensor<T>::slice(Tensor<T>::SliceIdx &indexs) -> Tensor<T> {
     size_t m_shape_index = 0;
 
     for (const auto &[start, end] : indexs) {
-        stride /= this->m_shape[m_shape_index];
+        stride /= this->m_dims[m_shape_index];
         index += start * stride;
         ++m_shape_index;
     }
 
-    tensor.m_index_cb = [base=index, &shape=tensor.m_shape] (size_t index) -> size_t {
 
-        return base + index;
-    };
+    // tensor.m_index_cb = [base=index, &shape=tensor.m_shape] (size_t index) -> size_t {
+    //     return base + index;
+    // };
 
     return tensor;
 }
@@ -190,7 +235,7 @@ auto Tensor<T>::backward() -> void {
 template<class T>
 auto Tensor<T>::dot(const Tensor<T> &tensor) const -> Tensor<T> {
     assert(this->size() == tensor.size());
-    assert(this->m_shape.size() == tensor.shapes().size());
+    assert(this->m_shape.size() == tensor.size());
     for (size_t i = 0; i < this->m_shape.size(); ++i) {
         assert(this->m_shape[i] == tensor.m_shape[i]);
     }
@@ -326,9 +371,10 @@ template<class T>
 auto Tensor<T>::operator()(const std::vector<size_t> &indexs) const -> Tensor<T> {
     assert(indexs.size() <= this->m_shape.size()); 
     
-    std::vector<size_t> shape;
+    // std::vector<size_t> shape;
+    std::vector<Shape> shape;
     for (size_t i = indexs.size(); i < this->m_shape.size(); ++i) {
-        shape.push_back(this->m_shape[i]);
+        shape.push_back({START(this->m_shape[i]), END(this->m_shape[i])});
     }
     Tensor<T> tensor(shape);
     tensor.m_storage = this->m_storage;
@@ -340,16 +386,17 @@ auto Tensor<T>::operator()(const std::vector<size_t> &indexs) const -> Tensor<T>
     //     volumn *= *shape_it;
     // }
     
-    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
-        return a * b;
+    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
     });
 
     size_t index = 0;
     size_t m_shape_index = 0;
 
     for (const auto &in : indexs) {
-        assert(in < this->m_shape[m_shape_index]);
-        stride /= this->m_shape[m_shape_index];
+        size_t rg = END(this->m_shape[m_shape_index]) - START(this->m_shape[m_shape_index]);
+        assert(in < rg);
+        stride /= rg;
         index += in * stride;
         ++m_shape_index;
     }
@@ -364,23 +411,25 @@ auto Tensor<T>::operator()(const std::vector<size_t> &indexs) const -> Tensor<T>
 template<class T>
 auto Tensor<T>::operator()(std::initializer_list<size_t> indexs) const -> Tensor<T> {
     assert(indexs.size() <= this->m_shape.size());
-    std::vector<size_t> shape;
+    // std::vector<size_t> shape;
+    std::vector<Shape> shape;
     for (size_t i = indexs.size(); i < this->m_shape.size(); ++i) {
         shape.push_back(this->m_shape[i]);
     }
     Tensor<T> tensor(shape);
     tensor.m_storage = this->m_storage;
 
-    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
-        return a * b;
+    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
     });
 
     size_t index = 0;
     size_t m_shape_index = 0;
 
     for (const auto &in : indexs) {
-        assert(in < this->m_shape[m_shape_index]);
-        stride /= this->m_shape[m_shape_index];
+        size_t rg = END(this->m_shape[m_shape_index]) - START(this->m_shape[m_shape_index]);
+        assert(in < rg);
+        stride /= rg;
         index += in * stride;
         ++m_shape_index;
     }
@@ -396,18 +445,19 @@ template<class T>
 auto Tensor<T>::operator[](std::initializer_list<size_t> indexs) -> T& {
     assert(indexs.size() == this->m_shape.size());
     
-    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
+    size_t stride = std::reduce(this->m_dims.begin(), this->m_dims.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
         return a * b;
     });
 
     size_t index = 0;
     size_t m_shape_index = 0;
+
     for (const auto &in : indexs) {
-        assert(this->m_shape[m_shape_index] > in);
-        stride /= this->m_shape[m_shape_index];
-        index += in * stride;
+        stride /= this->m_dims[m_shape_index];
+        index += (in + START(this->m_shape[m_shape_index])) * stride;
         ++m_shape_index;
     }
+
     if (this->m_index_cb) {
         index = this->m_index_cb(index);
     }
@@ -419,16 +469,20 @@ template<class T>
 auto Tensor<T>::operator[](std::initializer_list<size_t> indexs) const -> const T& {
     assert(indexs.size() == this->m_shape.size());
     
-    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const size_t &b) -> size_t {
-        return a * b;
+    size_t stride = std::reduce(this->m_shape.begin(), this->m_shape.end(), 1, [] (const size_t &a, const Shape &b) -> size_t {
+        return a * (END(b) - START(b));
     });
 
 
     size_t index = 0;
     size_t m_shape_index = 0;
     for (const auto &in : indexs) {
-        assert(this->m_shape[m_shape_index] > in);
-        stride /= this->m_shape[m_shape_index];
+        // assert(this->m_shape[m_shape_index] > in);
+        // stride /= this->m_shape[m_shape_index];
+        size_t rg = END(this->m_shape[m_shape_index]) - START(this->m_shape[m_shape_index]);
+        assert(rg > in);
+        stride /= rg;
+        
         index += in * stride;
         ++m_shape_index;
     }

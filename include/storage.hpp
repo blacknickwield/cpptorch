@@ -12,9 +12,8 @@ template<class T>
 class Storage {
 public:
     Storage();
-    explicit Storage(size_t n);
+    explicit Storage(size_t size);
     explicit Storage(T data[], size_t size);
-    // deep copy
     Storage(const Storage<T>&);
     auto operator=(const Storage<T>&) -> Storage<T>&;
 

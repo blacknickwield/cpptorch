@@ -15,7 +15,7 @@ It can only be accessed through 1 index.
 template <class T> Storage<T>::Storage() : m_size(0), m_data(nullptr) {}
 
 template <class T>
-Storage<T>::Storage(size_t n) : m_size(n), m_data(std::make_unique<T[]>(n)) {}
+Storage<T>::Storage(size_t size) : m_size(size), m_data(std::make_unique<T[]>(size)) {}
 
 template<class T>
 Storage<T>::Storage(T *data, size_t size) : m_size(size) {
@@ -37,6 +37,7 @@ auto Storage<T>::operator=(const Storage<T> & storage) -> Storage<T>& {
   std::transform(storage.m_data.get(), storage.m_data.get() + storage.m_size, this->m_data.get(), [] (const T &value) -> T {
     return value;
   });
+
   return *this;
 }
 
@@ -54,6 +55,7 @@ auto Storage<T>::operator=(Storage<T> &&storage) -> Storage<T>& {
 
   return *this;
 }
+
 template <class T> 
 auto Storage<T>::fill(T value) -> void {
   std::fill(this->m_data.get(), this->m_data.get() + this->m_size, value);
@@ -77,6 +79,7 @@ auto Storage<T>::operator+(T elem) -> void {
     return value + elem;
   });
 }
+
 template<class T>
 auto Storage<T>::operator-(T elem) -> void {
   std::transform(this->m_data.get(), this->m_data.get() + this->m_size, this->m_data.get(), [&elem] (T value) {
